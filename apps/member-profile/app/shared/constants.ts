@@ -46,6 +46,7 @@ const ROUTES = [
   '/opportunities/:id/edit',
   '/opportunities/:id/refine',
   '/peer-help',
+  '/peer-help/leaderboard',
   '/peer-help/request',
   '/peer-help/:id',
   '/peer-help/:id/delete',

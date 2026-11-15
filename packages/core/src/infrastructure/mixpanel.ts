@@ -52,6 +52,10 @@ export type MixpanelEvent = {
     Filter: string[];
   };
 
+  'Peer Help Leaderboard Viewed': {
+    Timeframe: string;
+  };
+
   'Help Request Offered': {
     Type: string;
   };

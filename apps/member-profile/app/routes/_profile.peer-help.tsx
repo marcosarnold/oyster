@@ -1,10 +1,11 @@
 import dayjs from 'dayjs';
-import { ArrowRight, Check, Edit, Info, User } from 'react-feather';
+import { ArrowRight, Award, Check, Edit, Info, User } from 'react-feather';
 import {
   generatePath,
   Link,
   type LoaderFunctionArgs,
   Outlet,
+  type ShouldRevalidateFunctionArgs,
   useLoaderData,
   useSearchParams,
 } from 'react-router';
@@ -58,6 +59,28 @@ const PeerHelpSearchParams = ListSearchParams.pick({
   type: z.nativeEnum(HelpRequestType).nullable().catch(null),
   view: z.enum(['me']).nullable().catch(null),
 });
+
+// Changing the leaderboard's timeframe shouldn't refetch the request lists.
+export function shouldRevalidate({
+  currentUrl,
+  defaultShouldRevalidate,
+  nextUrl,
+}: ShouldRevalidateFunctionArgs) {
+  const current = new URLSearchParams(currentUrl.search);
+  const next = new URLSearchParams(nextUrl.search);
+
+  current.delete('timeframe');
+  next.delete('timeframe');
+
+  if (
+    currentUrl.pathname === nextUrl.pathname &&
+    current.toString() === next.toString()
+  ) {
+    return false;
+  }
+
+  return defaultShouldRevalidate;
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await ensureUserAuthenticated(request);
@@ -231,7 +254,10 @@ export default function PeerHelp() {
     <>
       <Dashboard.Header>
         <Dashboard.Title>Peer Help 💬</Dashboard.Title>
-        <RequestHelpButton />
+        <div className="flex items-center gap-2">
+          <LeaderboardButton />
+          <RequestHelpButton />
+        </div>
       </Dashboard.Header>
 
       <Text className="-mt-3" color="gray-500" variant="sm">
@@ -334,6 +360,26 @@ function TypeFilter() {
         </FilterList>
       </FilterPopover>
     </FilterRoot>
+  );
+}
+
+function LeaderboardButton() {
+  const [searchParams] = useSearchParams();
+
+  return (
+    <Button.Slot variant="secondary">
+      <Link
+        aria-label="Leaderboard"
+        preventScrollReset
+        to={{
+          pathname: Route['/peer-help/leaderboard'],
+          search: searchParams.toString(),
+        }}
+      >
+        <Award size={16} />
+        <span className="hidden sm:inline">Leaderboard</span>
+      </Link>
+    </Button.Slot>
   );
 }
 

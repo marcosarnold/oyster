@@ -17,6 +17,7 @@
     "migration:create": "bun ./src/scripts/create-migration.ts",
     "prisma:studio": "prisma db pull && prisma studio",
     "seed": "bun ./src/scripts/seed.ts && bun types",
+    "seed:peer-help": "bun ./src/scripts/seed-peer-help.ts",
     "type-check": "tsc --noEmit",
     "types": "kysely-codegen --dialect=postgres --camel-case --out-file=./dist/db.d.ts"
   },

@@ -49,7 +49,11 @@ export function Select({
       </Trigger>
 
       <Portal>
-        <Content className="w-fit max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Content
+          className="w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm"
+          position="popper"
+          sideOffset={4}
+        >
           <ScrollUpButton className="flex h-6 cursor-default items-center justify-center bg-gray-50">
             <ChevronUp size={16} />
           </ScrollUpButton>

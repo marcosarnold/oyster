@@ -18,6 +18,7 @@
     "db:migrate:down": "bun --filter @oyster/db migrate:down",
     "db:migration:create": "cd packages/db && bun migration:create",
     "db:seed": "cd packages/db && bun seed",
+    "db:seed:peer-help": "cd packages/db && bun seed:peer-help",
     "db:types": "bun --filter @oyster/db types",
     "dx:down": "docker compose down",
     "dx:nuke": "docker compose down --volumes --remove-orphans",
