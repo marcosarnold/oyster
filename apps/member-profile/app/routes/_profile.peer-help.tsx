@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { ListSearchParams } from '@oyster/core/member-profile/ui';
 import { track } from '@oyster/core/mixpanel';
 import {
+  getPeerHelpLeaderboard,
   type HelpRequestStatus,
   HelpRequestType,
 } from '@oyster/core/peer-help';
@@ -34,6 +35,7 @@ import {
   FilterTrigger,
   type FilterValue,
 } from '@oyster/ui/filter';
+import { Select, SelectItem } from '@oyster/ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -42,6 +44,8 @@ import {
 } from '@oyster/ui/tooltip';
 import { toTitleCase } from '@oyster/utils';
 
+import { Card, type CardProps } from '@/shared/components/card';
+import { Leaderboard } from '@/shared/components/leaderboard';
 import {
   HelpRequestDescription,
   HelpRequestStatusPill,
@@ -55,6 +59,7 @@ const PeerHelpSearchParams = ListSearchParams.pick({
   limit: true,
   page: true,
 }).extend({
+  timeframe: z.enum(['all_time', 'this_month', 'this_week']).catch('this_week'),
   type: z.nativeEnum(HelpRequestType).nullable().catch(null),
   view: z.enum(['me']).nullable().catch(null),
 });
@@ -64,7 +69,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const memberId = user(session);
 
   const { pathname, searchParams } = new URL(request.url);
-  const { limit, page, type, view } = PeerHelpSearchParams.parse(
+  const { limit, page, timeframe, type, view } = PeerHelpSearchParams.parse(
     Object.fromEntries(searchParams)
   );
 
@@ -73,6 +78,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const [
     { helpRequests: openHelpRequests, totalCount: openTotalCount },
     { helpRequests: closedHelpRequests, totalCount: closedTotalCount },
+    leaderboard,
   ] = await Promise.all([
     listHelpRequests({
       limit: null,
@@ -91,6 +97,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       timezone,
       type,
       view,
+    }),
+    getPeerHelpLeaderboard({
+      limit: 10,
+      where: {
+        finishedAfter: getFinishedAfter(timeframe, timezone),
+        memberId,
+      },
     }),
   ]);
 
@@ -116,11 +129,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     closedHelpRequests,
     closedTotalCount,
+    leaderboard,
     limit,
     openHelpRequests,
     openTotalCount,
     page,
+    timeframe,
   };
+}
+
+function getFinishedAfter(
+  timeframe: z.infer<typeof PeerHelpSearchParams>['timeframe'],
+  timezone: string
+): Date | null {
+  const now = dayjs().tz(timezone);
+
+  switch (timeframe) {
+    case 'all_time':
+      return null;
+
+    case 'this_month':
+      return now.startOf('month').toDate();
+
+    case 'this_week':
+      return now.startOf('week').toDate();
+  }
 }
 
 type ListHelpRequestsProps = {
@@ -239,35 +272,122 @@ export default function PeerHelp() {
         ColorStack peers.
       </Text>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <MeFilter />
-        <TypeFilter />
+      <div className="grid grid-cols-1 items-start gap-6 @[900px]:grid-cols-[24rem_1fr]">
+        {/* On small screens, the leaderboard goes below the requests. */}
+        <PeerHelpLeaderboard className="order-last @[900px]:sticky @[900px]:top-4 @[900px]:order-first" />
+
+        <div className="flex min-w-0 flex-col gap-4 @container">
+          <div className="flex flex-wrap items-center gap-2">
+            <MeFilter />
+            <TypeFilter />
+          </div>
+
+          <section className="mb-2 flex flex-col gap-2">
+            <HelpRequestSectionHeader count={openTotalCount} label="Open" />
+            <HelpRequestList
+              emptyMessage="No open help requests found."
+              helpRequests={openHelpRequests}
+            />
+          </section>
+
+          <section className="mb-2 flex flex-col gap-2">
+            <HelpRequestSectionHeader count={closedTotalCount} label="Closed" />
+            <HelpRequestList
+              emptyMessage="No closed help requests found."
+              helpRequests={closedHelpRequests}
+            />
+            <Pagination
+              dataLength={closedHelpRequests.length}
+              page={page}
+              pageSize={limit}
+              totalCount={closedTotalCount}
+            />
+          </section>
+        </div>
       </div>
-
-      <section className="mb-2 flex flex-col gap-2">
-        <HelpRequestSectionHeader count={openTotalCount} label="Open" />
-        <HelpRequestList
-          emptyMessage="No open help requests found."
-          helpRequests={openHelpRequests}
-        />
-      </section>
-
-      <section className="mb-2 flex flex-col gap-2">
-        <HelpRequestSectionHeader count={closedTotalCount} label="Closed" />
-        <HelpRequestList
-          emptyMessage="No closed help requests found."
-          helpRequests={closedHelpRequests}
-        />
-        <Pagination
-          dataLength={closedHelpRequests.length}
-          page={page}
-          pageSize={limit}
-          totalCount={closedTotalCount}
-        />
-      </section>
 
       <Outlet />
     </>
+  );
+}
+
+function PeerHelpLeaderboard({ className }: CardProps) {
+  const { leaderboard, timeframe } = useLoaderData<typeof loader>();
+  const [, setSearchParams] = useSearchParams();
+
+  return (
+    <Card className={className}>
+      <Card.Title>Peer Help Leaderboard 🏆</Card.Title>
+
+      <Card.Description>
+        The members who have helped the most peers. Thank you for giving back!
+      </Card.Description>
+
+      <Select
+        onValueChange={(value) => {
+          setSearchParams(
+            (params) => {
+              params.set('timeframe', value);
+
+              return params;
+            },
+            { preventScrollReset: true }
+          );
+        }}
+        value={timeframe}
+      >
+        <SelectItem value="this_week">This Week</SelectItem>
+        <SelectItem value="this_month">This Month</SelectItem>
+        <SelectItem value="all_time">All-Time</SelectItem>
+      </Select>
+
+      {leaderboard.top.length ? (
+        <Leaderboard.List scroll>
+          {leaderboard.top.map((position) => {
+            return <LeaderboardPosition key={position.id} {...position} />;
+          })}
+        </Leaderboard.List>
+      ) : (
+        <Text color="gray-500">
+          No one has helped a peer in this timeframe yet. Be the first!
+        </Text>
+      )}
+
+      {leaderboard.me && (
+        <div className="border-t border-gray-200 pt-4">
+          <Leaderboard.List>
+            <LeaderboardPosition {...leaderboard.me} />
+          </Leaderboard.List>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+type LeaderboardPositionProps = SerializeFrom<
+  typeof loader
+>['leaderboard']['top'][number];
+
+function LeaderboardPosition(position: LeaderboardPositionProps) {
+  return (
+    <Leaderboard.Item
+      firstName={position.firstName}
+      id={position.id}
+      isMe={position.me}
+      label={
+        <Leaderboard.ItemLabel>
+          <span className="whitespace-nowrap">
+            {position.count}{' '}
+            <span className="text-sm">
+              {position.count === 1 ? 'Peer Helped' : 'Peers Helped'}
+            </span>
+          </span>
+        </Leaderboard.ItemLabel>
+      }
+      lastName={position.lastName}
+      position={position.rank}
+      profilePicture={position.profilePicture || undefined}
+    />
   );
 }
 

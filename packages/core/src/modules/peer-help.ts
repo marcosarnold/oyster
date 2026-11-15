@@ -1,4 +1,5 @@
 import dedent from 'dedent';
+import { sql } from 'kysely';
 import { match } from 'ts-pattern';
 import { z } from 'zod';
 
@@ -46,6 +47,96 @@ const HelpRequest = z.object({
 });
 
 type HelpRequest = z.infer<typeof HelpRequest>;
+
+// Queries
+
+type GetPeerHelpLeaderboardOptions = {
+  limit: number;
+  where: {
+    finishedAfter: Date | null;
+    memberId: string;
+  };
+};
+
+const PeerHelpLeaderboardPosition = z.object({
+  count: z.coerce.number().min(1),
+  firstName: z.string(),
+  id: z.string(),
+  lastName: z.string(),
+  me: z.coerce.boolean(),
+  profilePicture: z.string().nullable(),
+  rank: z.coerce.number().min(1),
+});
+
+export type PeerHelpLeaderboardPosition = z.infer<
+  typeof PeerHelpLeaderboardPosition
+>;
+
+/**
+ * Returns the members who have helped the most peers, ranked by the number of
+ * help requests they've completed as the helper. Only `completed` requests
+ * count.
+ *
+ * Members who are tied share a rank, so everyone tied at the cutoff is included
+ * (the list can be longer than `limit`). If the member viewing the leaderboard
+ * has helped at least one peer but isn't in the top `limit`, their position is
+ * returned separately as `me`.
+ */
+export async function getPeerHelpLeaderboard({
+  limit,
+  where,
+}: GetPeerHelpLeaderboardOptions) {
+  const { finishedAfter, memberId } = where;
+
+  const rows = await db
+    .with('counts', (db) => {
+      return db
+        .selectFrom('helpRequests')
+        .select([(eb) => eb.fn.countAll<string>().as('count'), 'helperId'])
+        .where('status', '=', HelpRequestStatus.COMPLETED)
+        .where('helperId', 'is not', null)
+        .$if(!!finishedAfter, (eb) => {
+          return eb.where('finishedAt', '>=', finishedAfter);
+        })
+        .groupBy('helperId');
+    })
+    .with('positions', (db) => {
+      return db
+        .selectFrom('counts')
+        .select([
+          'counts.count',
+          'counts.helperId',
+          sql<number>`rank() over (order by counts.count desc)`.as('rank'),
+        ]);
+    })
+    .selectFrom('positions')
+    .innerJoin('students', 'students.id', 'positions.helperId')
+    .select([
+      'positions.count',
+      'positions.rank',
+      'students.firstName',
+      'students.id',
+      'students.lastName',
+      'students.profilePicture',
+      sql<boolean>`students.id = ${memberId}`.as('me'),
+    ])
+    .where((eb) => {
+      return eb.or([
+        eb('positions.rank', '<=', limit),
+        eb('positions.helperId', '=', memberId),
+      ]);
+    })
+    .orderBy('positions.rank', 'asc')
+    .orderBy('students.id', 'asc')
+    .execute();
+
+  const positions = PeerHelpLeaderboardPosition.array().parse(rows);
+
+  return {
+    me: positions.find((position) => position.me && position.rank > limit),
+    top: positions.filter((position) => position.rank <= limit),
+  };
+}
 
 // Delete Help Request
 
